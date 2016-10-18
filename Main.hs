@@ -1,8 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude, NoMonomorphismRestriction, OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo, ScopedTypeVariables, ViewPatterns                  #-}
 
-{-# OPTIONS_GHC -fdefer-typed-holes #-}
-
 module Main where
 
 import ClassyPrelude
@@ -16,11 +14,11 @@ import Text.Email.Validate (toByteString, validate, EmailAddress(..))
 
 {- Note: The structure of the application
 
-As you can see the structure of the main is quite linear, I just create the
-widgets to query the user for the informations I care about, and it all is taken
-care by the validateInput function
+As you can see the structure of the main function is quite linear, and
+corresponds to the high level structure of the feature. The most important
+functions are validateInput and notifyLogin, defined below.
 
-The htmlHead function provides some styling from a cdn for ease of use.
+The htmlHead function provides some styling from a cdn for convenience.
 -}
 
 htmlHead = do
@@ -56,14 +54,18 @@ prettyPrint u = unwords [ firstName u , lastName u
 
 --------------------------------------------------------------------------------
 
-{- Note: A general validation function
+{- Note: A general function to construct data validations
 
 The validateInput function takes as parameters: the prompt used to ask the user
-for a specific information, a pure validation function and an event to
+for a specific information, a _pure_ validation function and an event to
 syncronize the update with (in this example the signUpButton - note that with
 less effort the output could be always updated instantly, but in this case it
-didn't fell right from an UI perspective). The function is further commented in
-the code below:
+didn't fell right from an UI perspective).
+
+The function then draws the required elements on the dom and handles internally
+all the necessary signal plumbing, only exposing the final, validated signal.
+
+The function is further commented in the code below:
 -}
 
 type Prompt = Text
@@ -74,21 +76,22 @@ validateInput prompt pureValidation event = do
   -- 1) Declaring the graphical interface: the prompt and the input field
   text prompt
   inputField <- textInput def
-  -- 2) Using the pure validation function to construct the hidden property of
-  -- the feedback label and error message (both dynamic)
-  let queryResult = fmap pureValidation (_textInput_value inputField)
-      dynAttrs = either (const mempty) (const hidden) <$> queryResult
-      dynError = either id             (const "")     <$> queryResult
-  -- 3) Freezing the events in order to display the update only when the button
-  -- is pressed
-  frozenAttrs <- resampleOn event hidden dynAttrs
-  frozenError <- resampleOn event "" dynError
-  -- 4) Optionally showing a label containing the eventual error
+  -- 2) Using the pure validation function to validate the data construct a
+  -- signal for the "hidden" html property of the feedback label and a signal
+  -- for an eventual error message, all tied to the sign in button events
+  let queryResult = pureValidation <$> _textInput_value inputField
+  frozenAttrs <- resampleOn event hidden
+                   (either (const mempty) (const hidden) <$> queryResult)
+  frozenError <- resampleOn event ""
+                   (either id (const "") <$> queryResult)
+  -- 3) Optionally showing a label containing the eventual error, and returning
+  -- the validated content of the query for further processing
   elDynAttr "p" frozenAttrs (dynText frozenError)
-  -- Return the actual content of the query for further processing
   return $ fmap (either (const Nothing) Just) queryResult
 
 --------------------------------------------------------------------------------
+-- A function to notify the login of the user, following the same logic of
+-- validateInput.
 
 notifyLogin :: MonadWidget t m
             => Dynamic t (Maybe User) -> Event t b -> m ()
@@ -105,6 +108,9 @@ Down below there are some pure functions used for validation: they all take the
 text from the input field as a parameter, and return either an error to be
 displayed, or the value correctly parsed. This ensures the complete separation
 between the validation logic and the presentation of the application.
+
+For the email validation part, I used the standard implemented in the
+email-validate package
 -}
 
 ageValidation :: Text -> Either Text Int
@@ -120,8 +126,9 @@ nameValidation "" = Left "Please enter a non-empty name."
 nameValidation n  = Right n
 
 emailValidation :: Text -> Either Text EmailAddress
+emailValidation ""                             = Left "Please enter your email address"
+emailValidation (validate . toS -> Left _)     = Left "Your email address seems to be incorrect"
 emailValidation (validate . toS -> Right addr) = Right addr
-emailValidation (validate . toS -> Left _)     = Left "Please enter your email address."
 
 --------------------------------------------------------------------------------
 -- Utilities
@@ -130,5 +137,8 @@ emailValidation (validate . toS -> Left _)     = Left "Please enter your email a
 hidden :: Map Text Text
 hidden = "hidden" =: "true"
 
+-- Given an event, an initial value, and a dynamic, this function creates a
+-- dynamic that only changes values when the event fires (starting with the
+-- initial value)
 resampleOn :: (MonadWidget t m) => Event t b -> a -> Dynamic t a -> m (Dynamic t a)
 resampleOn event initial dyn = holdDyn initial (tag (current dyn) event)
