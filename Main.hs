@@ -1,6 +1,8 @@
 {-# LANGUAGE NoImplicitPrelude, NoMonomorphismRestriction, OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo, ScopedTypeVariables, ViewPatterns                  #-}
 
+{-# OPTIONS_GHC -fdefer-typed-holes #-}
+
 module Main where
 
 import ClassyPrelude
@@ -8,7 +10,7 @@ import Reflex
 import Reflex.Dom
 
 import Data.String.Conv    (toS)
-import Text.Email.Validate (validate, EmailAddress(..))
+import Text.Email.Validate (toByteString, validate, EmailAddress(..))
 
 --------------------------------------------------------------------------------
 
@@ -34,7 +36,23 @@ main = mainWidgetWithHead htmlHead $ do
       mail      <- validateInput "Email:"      emailValidation signUpButton
       age       <- validateInput "Age:"        ageValidation   signUpButton
       signUpButton <- button "Sign up"
-  return ()
+  let user = (liftM4 . liftM4) User firstName lastName mail age
+  notifyLogin user signUpButton
+
+--------------------------------------------------------------------------------
+-- Data modeling
+
+data User = User { firstName :: Text
+                 , lastName :: Text
+                 , email :: EmailAddress
+                 , age :: Int
+                 } deriving (Eq, Show)
+
+prettyPrint :: User -> Text
+prettyPrint u = unwords [ firstName u , lastName u
+                        , parenthesized (toS . toByteString $ email u)]
+  where
+    parenthesized s = "(" <> s <> ")"
 
 --------------------------------------------------------------------------------
 
@@ -59,17 +77,25 @@ validateInput prompt pureValidation event = do
   -- 2) Using the pure validation function to construct the hidden property of
   -- the feedback label and error message (both dynamic)
   let queryResult = fmap pureValidation (_textInput_value inputField)
-      hidden = "hidden" =: "true" :: Map Text Text
       dynAttrs = either (const mempty) (const hidden) <$> queryResult
       dynError = either id             (const "")     <$> queryResult
   -- 3) Freezing the events in order to display the update only when the button
   -- is pressed
-  frozenAttrs <- holdDyn hidden (tag (current dynAttrs) event)
-  frozenError <- holdDyn ""     (tag (current dynError) event)
+  frozenAttrs <- resampleOn event hidden dynAttrs
+  frozenError <- resampleOn event "" dynError
   -- 4) Optionally showing a label containing the eventual error
   elDynAttr "p" frozenAttrs (dynText frozenError)
   -- Return the actual content of the query for further processing
   return $ fmap (either (const Nothing) Just) queryResult
+
+--------------------------------------------------------------------------------
+
+notifyLogin :: MonadWidget t m
+            => Dynamic t (Maybe User) -> Event t b -> m ()
+notifyLogin user event = do
+  hiddenAttr  <- resampleOn event hidden (maybe hidden (const mempty) <$> user)
+  loginReport <- resampleOn event ""     (maybe ""     prettyPrint    <$> user)
+  elDynAttr "h5" hiddenAttr (do text "User "; dynText loginReport; text " logged in")
 
 --------------------------------------------------------------------------------
 
@@ -96,3 +122,13 @@ nameValidation n  = Right n
 emailValidation :: Text -> Either Text EmailAddress
 emailValidation (validate . toS -> Right addr) = Right addr
 emailValidation (validate . toS -> Left _)     = Left "Please enter your email address."
+
+--------------------------------------------------------------------------------
+-- Utilities
+
+-- A commonly used property in this demo
+hidden :: Map Text Text
+hidden = "hidden" =: "true"
+
+resampleOn :: (MonadWidget t m) => Event t b -> a -> Dynamic t a -> m (Dynamic t a)
+resampleOn event initial dyn = holdDyn initial (tag (current dyn) event)
