@@ -87,7 +87,7 @@ validateInput prompt pureValidation event = do
   -- 3) Optionally showing a label containing the eventual error, and returning
   -- the validated content of the query for further processing
   elDynAttr "p" hiddenAttr (dynText error)
-  return $ fmap (either (const Nothing) Just) queryResult
+  return (either (const Nothing) Just <$> queryResult)
 
 --------------------------------------------------------------------------------
 -- A function to notify the login of the user, following the same logic of
