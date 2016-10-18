@@ -80,13 +80,13 @@ validateInput prompt pureValidation event = do
   -- signal for the "hidden" html property of the feedback label and a signal
   -- for an eventual error message, all tied to the sign in button events
   let queryResult = pureValidation <$> _textInput_value inputField
-  frozenAttrs <- resampleOn event hidden
-                   (either (const mempty) (const hidden) <$> queryResult)
-  frozenError <- resampleOn event ""
-                   (either id (const "") <$> queryResult)
+  hiddenAttr <- resampleOn event hidden
+                  (either (const mempty) (const hidden) <$> queryResult)
+  error <- resampleOn event ""
+             (either id (const "") <$> queryResult)
   -- 3) Optionally showing a label containing the eventual error, and returning
   -- the validated content of the query for further processing
-  elDynAttr "p" frozenAttrs (dynText frozenError)
+  elDynAttr "p" hiddenAttr (dynText error)
   return $ fmap (either (const Nothing) Just) queryResult
 
 --------------------------------------------------------------------------------
