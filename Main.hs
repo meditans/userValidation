@@ -40,11 +40,12 @@ main = mainWidgetWithHead htmlHead $ do
 
 {- Note: A general validation function
 
-The validateInput takes as parameters: the prompt used to ask the user for a
-specific information, a pure validation function and an event to syncronize the
-update with (in this example the signUpButton; note that with less effort the
-output could be always updated instantly, but in this case it didn't fell right
-from an UI perspective). The function is further commented in the code below:
+The validateInput function takes as parameters: the prompt used to ask the user
+for a specific information, a pure validation function and an event to
+syncronize the update with (in this example the signUpButton - note that with
+less effort the output could be always updated instantly, but in this case it
+didn't fell right from an UI perspective). The function is further commented in
+the code below:
 -}
 
 type Prompt = Text
@@ -89,7 +90,7 @@ ageValidation (readMay -> Nothing :: Maybe Int)
                             = Left "Please enter your age."
 
 nameValidation :: Text -> Either Text Text
-nameValidation "" = Left "Please enter your name."
+nameValidation "" = Left "Please enter a non-empty name."
 nameValidation n  = Right n
 
 emailValidation :: Text -> Either Text EmailAddress
